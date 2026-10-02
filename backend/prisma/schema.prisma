@@ -1,0 +1,121 @@
+// Prisma Schema for Mini Secure Fintech Wallet
+// Academic Assignment Requirements: PostgreSQL datasource, Argon2id hashes, Atomic Transactions (W4)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  BLOCKED
+}
+
+// User Model (FR-1, W3)
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  username     String        @unique
+  cnic         String?       // PII National Identity (Control #15 DLP Masking)
+  passwordHash String        // Argon2id hash (W3: never plaintext, never bcrypt)
+  fullName     String
+  role         Role          @default(CUSTOMER)
+  status       AccountStatus @default(ACTIVE) // Having isBlocked (or status) directly in the database table is the most secure approach, serving as an instantaneous kill-switch for compromised or fraud-flagged financial accounts.
+  isBlocked    Boolean       @default(false)  // Instantaneous Account Kill-Switch
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  wallet         Wallet?
+  auditLogs      AuditLog[]
+  authenticators Authenticator[]
+
+  @@map("users")
+}
+
+// Wallet Model (FR-3, W1, W4)
+model Wallet {
+  id            String        @id @default(uuid())
+  userId        String        @unique
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountNumber String?       // Unique Account Number (e.g. PK99SWAL10002819)
+  balance       Decimal       @default(1000000.00)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  sentTransfers     Transaction[] @relation("SentTransactions")
+  receivedTransfers Transaction[] @relation("ReceivedTransactions")
+
+  @@map("wallets")
+}
+
+// Transaction Model (FR-4, FR-5, W4)
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Transaction {
+  id               String            @id @default(uuid())
+  senderWalletId   String
+  senderWallet     Wallet            @relation("SentTransactions", fields: [senderWalletId], references: [id])
+  receiverWalletId String
+  receiverWallet   Wallet            @relation("ReceivedTransactions", fields: [receiverWalletId], references: [id])
+  amount           Decimal
+  note             String?
+  status           TransactionStatus @default(SUCCESS)
+  idempotencyKey   String?
+  createdAt        DateTime          @default(now())
+
+  @@map("transactions")
+}
+
+// Idempotency Key Tracking (FR-8, W5)
+model IdempotencyKey {
+  id           String   @id @default(uuid())
+  key          String   @unique
+  userId       String
+  requestPath  String
+  responseBody String
+  statusCode   Int
+  createdAt    DateTime @default(now())
+
+  @@map("idempotency_keys")
+}
+
+// Security Audit Log (FR-9, W6)
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String   // e.g. "AUTH_LOGIN_SUCCESS", "TRANSFER_EXECUTE", "BOLA_ATTEMPT_BLOCKED"
+  ipAddress String?
+  metadata  String?
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// FIDO2 / WebAuthn Authenticator Model (Passkeys)
+model Authenticator {
+  id                   String   @id @default(uuid())
+  credentialID         String   @unique
+  credentialPublicKey  String
+  counter              BigInt   @default(0)
+  credentialDeviceType String   @default("singleDevice")
+  credentialBackedUp   Boolean  @default(false)
+  transports           String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt            DateTime @default(now())
+
+  @@map("authenticators")
+}
