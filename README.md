@@ -166,18 +166,35 @@ The web dashboard features an interactive **SECURITY EVALUATION DEMO PANEL** fix
 > [!CAUTION]
 > The `node_modules` folders are **NOT** meant to be uploaded. They are auto-generated and can balloon the project size from **~2 MB to ~800 MB**.
 
-Run the following commands from the **project root** to delete them before zipping:
+Run the following commands from the **project root** to safely delete them before zipping:
 
-**Windows (PowerShell):**
+**Windows (PowerShell) — Safe with existence check:**
 ```powershell
-Remove-Item -Recurse -Force backend\node_modules
-Remove-Item -Recurse -Force frontend\node_modules
+@('backend\node_modules', 'frontend\node_modules') | ForEach-Object {
+    if (Test-Path $_) {
+        Remove-Item -Recurse -Force $_
+        Write-Host "Deleted: $_" -ForegroundColor Green
+    } else {
+        Write-Host "Already removed or not found: $_" -ForegroundColor Yellow
+    }
+}
+Write-Host "Safe to zip and upload!" -ForegroundColor Cyan
 ```
 
-**macOS / Linux (bash):**
+**macOS / Linux (bash) — Safe with existence check:**
 ```bash
-rm -rf backend/node_modules frontend/node_modules
+for dir in backend/node_modules frontend/node_modules; do
+  if [ -d "$dir" ]; then
+    rm -rf "$dir" && echo "Deleted: $dir"
+  else
+    echo "Already removed or not found: $dir"
+  fi
+done
+echo "Safe to zip and upload!"
 ```
+
+> [!TIP]
+> These scripts will **not error** if `node_modules` is already missing — safe to run multiple times.
 
 After deleting, zip the folder and upload. The evaluator can restore dependencies with:
 
